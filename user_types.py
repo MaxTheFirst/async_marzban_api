@@ -23,8 +23,16 @@ class URLs(__URLs):
         return urls
 
 class User:
-    def __init__(self, username, data_limit=0, used_trafic=None, links=[], *args, **kwargs):
+    def __init__(self, username, data_limit=0, used_traffic=None, links=[], *args, **kwargs):
         self.name: str = username
-        self.access_urls = URLs(*links)
-        self.used_bytes: int = used_trafic
+        self.user_id = self.__get_user_id(username)
+        try:
+            self.access_urls = URLs(*links)
+        except TypeError:
+            self.access_urls = None
+        self.used_bytes: int = used_traffic
         self.data_limit: int = data_limit
+    
+    def __get_user_id(self, name: str):
+        if 'id' in name:
+            return int(name.replace('id', '').replace('m', '-'))

@@ -1,2 +1,2 @@
-from .api import MarzbanApi
+from .api import MarzbanApi, MarzbanApiError
 from .user_types import User

@@ -1,7 +1,12 @@
 from .user_types import *
 from typing import Optional, Union
 import aiohttp
+from aiohttp.client_exceptions import ClientError
+from asyncio.exceptions import TimeoutError
 from aiohttp.hdrs import METH_GET, METH_POST, METH_DELETE, METH_PUT
+
+class MarzbanApiError(Exception):
+    pass
 
 class Response():
     def __init__(self, status: int, json: Union[dict, None] = None):
@@ -38,8 +43,13 @@ class MarzbanApi():
             timeout = self._timeout
         url = f'{self.server_url}/{url}'
         session = await self.get_session()
-        async with session.request(method, url, data=data, timeout=timeout, headers=self.headers, **kwarg) as response:
-            return Response(response.status, await response.json())
+        try:
+            async with session.request(method, url, data=data, timeout=timeout, headers=self.headers, **kwarg) as response:
+                if response.status != 200:
+                    raise MarzbanApiError('Server data error!')
+                return Response(response.status, await response.json())
+        except (TimeoutError, ClientError):
+            raise MarzbanApiError('Server error!')
     
     async def authorize(self):
         data = {
@@ -55,9 +65,12 @@ class MarzbanApi():
         response = await self.make_request(METH_GET, 'api/users')
         return [User(**user) for user in response.json.get('users')]
     
+    def __get_username(self, key_name):
+        return f'id{key_name}'.replace('-', 'm')
+    
     async def create_key(self, key_name, data_limit=0) -> User:
         data = {
-            "username": f'id{key_name}',
+            "username": self.__get_username(key_name),
             "note":"",
             "proxies":{"vmess":{},"vless":{"flow":""},"trojan":{},"shadowsocks":{"method":"chacha20-ietf-poly1305"}},
             "data_limit":data_limit,
@@ -69,21 +82,19 @@ class MarzbanApi():
         response = await self.make_request(METH_POST, 'api/user', json=data)
         return User(**response.json)
     
-    async def delete_key(self, key_name) -> bool:
-        response = await self.make_request(METH_DELETE, f'api/user/id{key_name}')
-        return response.status_code == 200
+    async def delete_key(self, key_name):
+        await self.make_request(METH_DELETE, f'api/user/{self.__get_username(key_name)}')
     
     async def get_key(self, key_name) -> User:
-        response = await self.make_request(METH_GET, f'api/user/id{key_name}')
+        response = await self.make_request(METH_GET, f'api/user/{self.__get_username(key_name)}')
         return User(**response.json)
     
-    async def add_data_limit(self, key_name: str, limit_bytes: int = 0, is_del = False) -> bool:
+    async def add_data_limit(self, key_name: str, limit_bytes: int = 0, is_del = False):
         if limit_bytes == 0 and not is_del:
             data = {"status": "disabled"}
         else:
             data = {"status": "active", 'data_limit': limit_bytes}
-        response = await self.make_request(METH_PUT, f'api/user/id{key_name}', json=data)
-        return response.status_code == 200
+        response = await self.make_request(METH_PUT, f'api/user/{self.__get_username(key_name)}', json=data)
     
     async def delete_data_limit(self, key_name: str) -> bool:
         return await self.add_data_limit(key_name, is_del=True)
